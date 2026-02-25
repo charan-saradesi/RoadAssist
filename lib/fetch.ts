@@ -1,19 +1,61 @@
 import { useState, useEffect, useCallback } from "react";
 
+// 🔹 Replace with your laptop IP when testing on phone
+const API_BASE = "http://172.20.203.102:8000";
+
+/**
+ * Generic API caller
+ */
 export const fetchAPI = async <T>(
-    url: string,
+    path: string,
     options?: RequestInit
 ): Promise<T> => {
-  const response = await fetch(url, options);
+  const url = `${API_BASE}${path}`;
 
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`);
+  console.log("📡 Calling API:", url);
+
+  const response = await fetch(url, {
+    headers: {
+      "Content-Type": "application/json",
+      ...(options?.headers || {}),
+    },
+    ...options,
+  });
+
+  // Read response once
+  const text = await response.text();
+
+  // Try parsing JSON safely
+  let data: any = null;
+  try {
+    data = text ? JSON.parse(text) : null;
+  } catch {
+    data = text;
   }
 
-  return response.json();
+  if (!response.ok) {
+    console.warn("⚠️ API Error:", response.status, data);
+
+    throw new Error(
+        typeof data === "string"
+            ? data
+            : data?.detail || `HTTP ${response.status}`
+    );
+  }
+
+  console.log("✅ API Success:", data);
+
+  return data as T;
 };
 
-export const useFetch = <T>(url: string, options?: RequestInit) => {
+/**
+ * React hook for fetching data
+ */
+export const useFetch = <T>(
+    path: string,
+    options?: RequestInit,
+    autoFetch: boolean = true
+) => {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -23,18 +65,20 @@ export const useFetch = <T>(url: string, options?: RequestInit) => {
     setError(null);
 
     try {
-      const result = await fetchAPI<T>(url, options);
+      const result = await fetchAPI<T>(path, options);
       setData(result);
-    } catch (err) {
-      setError((err as Error).message);
+    } catch (err: any) {
+      setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [url, JSON.stringify(options)]);
+  }, [path]); // ✅ only depend on path
 
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (autoFetch) {
+      fetchData();
+    }
+  }, [fetchData, autoFetch]);
 
   return { data, loading, error, refetch: fetchData };
 };

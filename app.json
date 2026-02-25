@@ -7,6 +7,9 @@
     "icon": "./assets/images/icon.png",
     "scheme": "mymobileapp",
     "userInterfaceStyle": "automatic",
+    "extra": {
+      "API_URL": "http://127.0.0.1:8000"
+    },
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": true
