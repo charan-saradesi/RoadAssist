@@ -1,19 +1,19 @@
 import { Driver, MarkerData } from "@/types/type";
 
-const directionsAPI = process.env.EXPO_PUBLIC_DIRECTIONS_API_KEY;
+const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_KEY;
 
 export const generateMarkersFromData = ({
-  data,
-  userLatitude,
-  userLongitude,
-}: {
+                                          data,
+                                          userLatitude,
+                                          userLongitude,
+                                        }: {
   data: Driver[];
   userLatitude: number;
   userLongitude: number;
 }): MarkerData[] => {
   return data.map((driver) => {
-    const latOffset = (Math.random() - 0.5) * 0.01; // Random offset between -0.005 and 0.005
-    const lngOffset = (Math.random() - 0.5) * 0.01; // Random offset between -0.005 and 0.005
+    const latOffset = (Math.random() - 0.5) * 0.01;
+    const lngOffset = (Math.random() - 0.5) * 0.01;
 
     return {
       latitude: userLatitude + latOffset,
@@ -25,11 +25,11 @@ export const generateMarkersFromData = ({
 };
 
 export const calculateRegion = ({
-  userLatitude,
-  userLongitude,
-  destinationLatitude,
-  destinationLongitude,
-}: {
+                                  userLatitude,
+                                  userLongitude,
+                                  destinationLatitude,
+                                  destinationLongitude,
+                                }: {
   userLatitude: number | null;
   userLongitude: number | null;
   destinationLatitude?: number | null;
@@ -58,27 +58,21 @@ export const calculateRegion = ({
   const minLng = Math.min(userLongitude, destinationLongitude);
   const maxLng = Math.max(userLongitude, destinationLongitude);
 
-  const latitudeDelta = (maxLat - minLat) * 1.3; // Adding some padding
-  const longitudeDelta = (maxLng - minLng) * 1.3; // Adding some padding
-
-  const latitude = (userLatitude + destinationLatitude) / 2;
-  const longitude = (userLongitude + destinationLongitude) / 2;
-
   return {
-    latitude,
-    longitude,
-    latitudeDelta,
-    longitudeDelta,
+    latitude: (userLatitude + destinationLatitude) / 2,
+    longitude: (userLongitude + destinationLongitude) / 2,
+    latitudeDelta: (maxLat - minLat) * 1.3 || 0.01,
+    longitudeDelta: (maxLng - minLng) * 1.3 || 0.01,
   };
 };
 
 export const calculateDriverTimes = async ({
-  markers,
-  userLatitude,
-  userLongitude,
-  destinationLatitude,
-  destinationLongitude,
-}: {
+                                             markers,
+                                             userLatitude,
+                                             userLongitude,
+                                             destinationLatitude,
+                                             destinationLongitude,
+                                           }: {
   markers: MarkerData[];
   userLatitude: number | null;
   userLongitude: number | null;
@@ -86,36 +80,47 @@ export const calculateDriverTimes = async ({
   destinationLongitude: number | null;
 }) => {
   if (
-    !userLatitude ||
-    !userLongitude ||
-    !destinationLatitude ||
-    !destinationLongitude
+      !userLatitude ||
+      !userLongitude ||
+      !destinationLatitude ||
+      !destinationLongitude
   )
     return;
 
   try {
     const timesPromises = markers.map(async (marker) => {
+      // ---------------- Driver → User ----------------
       const responseToUser = await fetch(
-        `https://maps.googleapis.com/maps/api/directions/json?origin=${marker.latitude},${marker.longitude}&destination=${userLatitude},${userLongitude}&key=${directionsAPI}`,
+          `https://api.geoapify.com/v1/routing?waypoints=${marker.latitude},${marker.longitude}|${userLatitude},${userLongitude}&mode=drive&apiKey=${GEOAPIFY_API_KEY}`
       );
-      const dataToUser = await responseToUser.json();
-      const timeToUser = dataToUser.routes[0].legs[0].duration.value; // Time in seconds
 
+      const dataToUser = await responseToUser.json();
+      const timeToUser =
+          dataToUser.features[0].properties.time; // seconds
+
+      // ---------------- User → Destination ----------------
       const responseToDestination = await fetch(
-        `https://maps.googleapis.com/maps/api/directions/json?origin=${userLatitude},${userLongitude}&destination=${destinationLatitude},${destinationLongitude}&key=${directionsAPI}`,
+          `https://api.geoapify.com/v1/routing?waypoints=${userLatitude},${userLongitude}|${destinationLatitude},${destinationLongitude}&mode=drive&apiKey=${GEOAPIFY_API_KEY}`
       );
+
       const dataToDestination = await responseToDestination.json();
       const timeToDestination =
-        dataToDestination.routes[0].legs[0].duration.value; // Time in seconds
+          dataToDestination.features[0].properties.time; // seconds
 
-      const totalTime = (timeToUser + timeToDestination) / 60; // Total time in minutes
-      const price = (totalTime * 0.5).toFixed(2); // Calculate price based on time
+      // ---------------- Total ----------------
+      const totalTimeMinutes = (timeToUser + timeToDestination) / 60;
 
-      return { ...marker, time: totalTime, price };
+      const price = (totalTimeMinutes * 0.5).toFixed(2);
+
+      return {
+        ...marker,
+        time: totalTimeMinutes,
+        price,
+      };
     });
 
     return await Promise.all(timesPromises);
   } catch (error) {
-    console.error("Error calculating driver times:", error);
+    console.error("Geoapify routing error:", error);
   }
 };

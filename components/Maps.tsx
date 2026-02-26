@@ -1,138 +1,219 @@
-import React, { useEffect, useState } from "react";
-import { ActivityIndicator, Text, View } from "react-native";
-import MapView, { Marker, PROVIDER_DEFAULT } from "react-native-maps";
-import MapViewDirections from "react-native-maps-directions";
+import React, {
+    useEffect,
+    useState,
+    useRef,
+    forwardRef,
+    useImperativeHandle,
+} from "react";
+import { View, StyleSheet,Image, ActivityIndicator } from "react-native";
+import MapView, { Marker, Polyline, Region } from "react-native-maps";
+import * as Location from "expo-location";
 
-import { icons } from "@/constants";
-import { useFetch } from "@/lib/fetch";
-import {
-    calculateDriverTimes,
-    calculateRegion,
-    generateMarkersFromData,
-} from "@/lib/map";
-import { useDriverStore, useLocationStore } from "@/store";
-import { Driver, MarkerData } from "@/types/type";
+interface Provider {
+    id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+    type: string;
+}
 
-const directionsAPI = process.env.EXPO_PUBLIC_DIRECTIONS_API_KEY;
+interface MapsProps {
+    providers?: Provider[];
+    selectedProvider?: Provider | null;
+    routeCoordinates?: { latitude: number; longitude: number }[];
+}
 
-const Map = () => {
-    const {
-        userLongitude,
-        userLatitude,
-        destinationLatitude,
-        destinationLongitude,
-    } = useLocationStore();
-    const { selectedDriver, setDrivers } = useDriverStore();
+const Maps = forwardRef<MapView, MapsProps>(
+    (
+        {
+            providers = [],
+            selectedProvider = null,
+            routeCoordinates = [],
+        },
+        ref
+    ) => {
+        const internalMapRef = useRef<MapView>(null);
+        const [location, setLocation] =
+            useState<Location.LocationObject | null>(null);
+        const [loading, setLoading] = useState(true);
 
-    const { data: drivers, loading, error } = useFetch<Driver[]>("/(api)/driver");
-    const [markers, setMarkers] = useState<MarkerData[]>([]);
+        useImperativeHandle(ref, () => internalMapRef.current as MapView);
 
-    useEffect(() => {
-        if (Array.isArray(drivers)) {
-            if (!userLatitude || !userLongitude) return;
+        /* ============================
+           DEBUG: Providers
+        ============================ */
+        useEffect(() => {
+            console.log("🛠 Providers received:", providers);
+            console.log("🛠 Providers length:", providers.length);
 
-            const newMarkers = generateMarkersFromData({
-                data: drivers,
-                userLatitude,
-                userLongitude,
-            });
+            if (providers.length > 0) {
+                console.log("🛠 First provider coords:", {
+                    lat: providers[0].latitude,
+                    lng: providers[0].longitude,
+                    latType: typeof providers[0].latitude,
+                    lngType: typeof providers[0].longitude,
+                });
+            }
+        }, [providers]);
 
-            setMarkers(newMarkers);
-        }
-    }, [drivers, userLatitude, userLongitude]);
+        /* ============================
+           GET USER LOCATION
+        ============================ */
+        useEffect(() => {
+            const fetchLocation = async () => {
+                console.log("📍 Requesting permission...");
 
-    useEffect(() => {
-        if (
-            markers.length > 0 &&
-            destinationLatitude !== undefined &&
-            destinationLongitude !== undefined
-        ) {
-            calculateDriverTimes({
-                markers,
-                userLatitude,
-                userLongitude,
-                destinationLatitude,
-                destinationLongitude,
-            }).then((drivers) => {
-                setDrivers(drivers as MarkerData[]);
-            });
-        }
-    }, [markers, destinationLatitude, destinationLongitude]);
+                const { status } =
+                    await Location.requestForegroundPermissionsAsync();
 
-    const region = calculateRegion({
-        userLatitude,
-        userLongitude,
-        destinationLatitude,
-        destinationLongitude,
-    });
+                console.log("📍 Permission status:", status);
 
-    if (loading || (!userLatitude && !userLongitude))
-        return (
-            <View className="flex justify-between items-center w-full">
-                <ActivityIndicator size="small" color="#000" />
-            </View>
-        );
+                if (status !== "granted") {
+                    console.log("❌ Location permission denied");
+                    setLoading(false);
+                    return;
+                }
 
-    if (error)
-        return (
-            <View className="flex justify-between items-center w-full">
-                <Text>Error: {error}</Text>
-            </View>
-        );
+                const currentLocation =
+                    await Location.getCurrentPositionAsync({
+                        accuracy: Location.Accuracy.High,
+                    });
 
-    return (
-        <MapView
-            provider={PROVIDER_DEFAULT}
-            className="w-full h-full rounded-2xl"
-            tintColor="black"
-            mapType="mutedStandard"
-            showsPointsOfInterest={false}
-            initialRegion={region}
-            showsUserLocation={true}
-            userInterfaceStyle="light"
-        >
-            {markers.map((marker, index) => (
-                <Marker
-                    key={marker.id}
-                    coordinate={{
-                        latitude: marker.latitude,
-                        longitude: marker.longitude,
-                    }}
-                    title={marker.title}
-                    image={
-                        selectedDriver === +marker.id ? icons.selectedMarker : icons.marker
+                console.log("📌 User location:", currentLocation.coords);
+
+                setLocation(currentLocation);
+                setLoading(false);
+
+                // wait for map to be ready
+                setTimeout(() => {
+                    if (internalMapRef.current) {
+                        const region: Region = {
+                            latitude: currentLocation.coords.latitude,
+                            longitude: currentLocation.coords.longitude,
+                            latitudeDelta: 0.02,
+                            longitudeDelta: 0.02,
+                        };
+
+                        console.log("🗺 Animating to user region:", region);
+
+                        internalMapRef.current.animateToRegion(region, 1000);
+                    } else {
+                        console.log("❌ Map ref not ready");
                     }
-                />
-            ))}
+                }, 800);
+            };
 
-            {destinationLatitude && destinationLongitude && (
-                <>
+            fetchLocation();
+        }, []);
+
+        /* ============================
+           SELECTED PROVIDER ZOOM
+        ============================ */
+        useEffect(() => {
+            if (selectedProvider && internalMapRef.current) {
+                console.log("🎯 Selected provider changed:", selectedProvider);
+
+                internalMapRef.current.animateToRegion(
+                    {
+                        latitude: selectedProvider.latitude,
+                        longitude: selectedProvider.longitude,
+                        latitudeDelta: 0.01,
+                        longitudeDelta: 0.01,
+                    },
+                    600
+                );
+            }
+        }, [selectedProvider]);
+
+        if (loading) {
+            return (
+                <View style={styles.loader}>
+                    <ActivityIndicator size="large" />
+                </View>
+            );
+        }
+
+        return (
+            <MapView
+                ref={internalMapRef}
+                style={styles.map}
+                initialRegion={{
+                    latitude: 20.5937,
+                    longitude: 78.9629,
+                    latitudeDelta: 10,
+                    longitudeDelta: 10,
+                }}
+                showsPointsOfInterest={false} // ✅ hide POIs like restaurants, stores
+                showsBuildings={false}        // ✅ hide 3D buildings
+                showsIndoors={false}          // ✅ hide indoor maps
+                showsTraffic={false}          // ✅ hide traffic
+                showsCompass={true}
+                onMapReady={() => console.log("🗺 Map Ready")}
+            >
+                {/* USER MARKER */}
+                {location && (
                     <Marker
-                        key="destination"
                         coordinate={{
-                            latitude: destinationLatitude,
-                            longitude: destinationLongitude,
+                            latitude: location.coords.latitude,
+                            longitude: location.coords.longitude,
                         }}
-                        title="Destination"
-                        image={icons.pin}
-                    />
-                    <MapViewDirections
-                        origin={{
-                            latitude: userLatitude!,
-                            longitude: userLongitude!,
-                        }}
-                        destination={{
-                            latitude: destinationLatitude,
-                            longitude: destinationLongitude,
-                        }}
-                        apikey={directionsAPI!}
-                        strokeColor="#0286FF"
-                        strokeWidth={2}
-                    />
-                </>
-            )}
-        </MapView>
-    );
-};
+                    >
+                        <Image
+                            source={require("../assets/icons/pin_user.png")}
+                            style={{ width: 50, height: 50 }}
+                            resizeMode="contain"
+                        />
+                    </Marker>
+                )}
 
-export default Map;
+                {/* PROVIDER MARKERS */}
+                {providers.map((provider) => {
+                    const pinImage =
+                        provider.type === "mechanic"
+                            ? require("../assets/icons/mechanic_pin.png")
+                            : provider.type === "towing"
+                                ? require("../assets/icons/tow_pin.png")
+                                : require("../assets/icons/mechanic_pin.png"); // for "both"
+
+                    return (
+                        <Marker
+
+                            key={provider.id}
+                            coordinate={{
+                                latitude: provider.latitude,
+                                longitude: provider.longitude,
+                            }}
+                            image={pinImage}
+                            title={provider.name}
+                        />
+                    );
+                })}
+
+                {routeCoordinates?.length > 0 && (
+                    <Polyline
+                        coordinates={routeCoordinates}
+                        strokeWidth={4}
+                        strokeColor="#0286FF"
+                    />
+                )}
+            </MapView>
+        );
+    }
+);
+
+export default Maps;
+
+const styles = StyleSheet.create({
+    map: {
+        width: "100%",
+        height: "90%",
+    },
+    loader: {
+        flex: 1,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+
+
+
+});

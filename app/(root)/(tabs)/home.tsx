@@ -1,141 +1,151 @@
-import { useUser } from "@clerk/clerk-expo";
-import { useAuth } from "@clerk/clerk-expo";
-import * as Location from "expo-location";
-import { router } from "expo-router";
-import { useState, useEffect } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
-    Text,
     View,
+    Text,
     TouchableOpacity,
     Image,
     FlatList,
     ActivityIndicator,
+    Dimensions,
 } from "react-native";
+
+import MapView from "react-native-maps";
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import GoogleTextInput from "@/components/GoogleTextInput";
-
-import RideCard from "@/components/RideCard";
+import Maps from "@/components/Maps";
+import MechanicCard from "@/components/MechanicCard";
 import { icons, images } from "@/constants";
-import { useFetch } from "@/lib/fetch";
-import { useLocationStore } from "@/store";
-import { Ride } from "@/types/type";
+import GoogleTextInput from "@/components/GoogleTextInput";
+import { mockProviders, Provider } from "@/constants/providers";
+
+const { width } = Dimensions.get("window");
+const CARD_WIDTH = 200;
 
 const Home = () => {
-    const { user } = useUser();
-    const { signOut } = useAuth();
+    const tabBarHeight = useBottomTabBarHeight();
+    const mapRef = useRef<MapView>(null);
+    const flatListRef = useRef<FlatList>(null);
 
-    const { setUserLocation, setDestinationLocation } = useLocationStore();
-
-    const handleSignOut = () => {
-        signOut();
-        router.replace("/(auth)/sign-in");
-    };
-
-    const [hasPermission, setHasPermission] = useState<boolean>(false);
-
-    const {
-        data: recentRides,
-        loading,
-        error,
-    } = useFetch<Ride[]>(`/(api)/ride/${user?.id}`);
+    const [providers, setProviders] = useState<Provider[]>([]);
+    const [loadingProviders, setLoadingProviders] = useState(true);
+    const [selectedIndex, setSelectedIndex] = useState(0);
 
     useEffect(() => {
-        (async () => {
-            let { status } = await Location.requestForegroundPermissionsAsync();
-            if (status !== "granted") {
-                setHasPermission(false);
-                return;
-            }
-
-            let location = await Location.getCurrentPositionAsync({});
-
-            const address = await Location.reverseGeocodeAsync({
-                latitude: location.coords?.latitude!,
-                longitude: location.coords?.longitude!,
-            });
-
-            setUserLocation({
-                latitude: location.coords?.latitude,
-                longitude: location.coords?.longitude,
-                address: `${address[0].name}, ${address[0].region}`,
-            });
-        })();
+        setTimeout(() => {
+            setProviders(mockProviders);
+            setLoadingProviders(false);
+        }, 800);
     }, []);
 
-    const handleDestinationPress = (location: {
-        latitude: number;
-        longitude: number;
-        address: string;
-    }) => {
-        setDestinationLocation(location);
+    /* ======================
+       SCROLL SYNC FUNCTION
+    ====================== */
 
-        router.push("/(root)/find-ride");
+    const onScrollEnd = (event: any) => {
+        const index = Math.round(
+            event.nativeEvent.contentOffset.x / CARD_WIDTH
+        );
+
+        setSelectedIndex(index);
+
+        const provider = providers[index];
+
+        if (provider && mapRef.current) {
+            mapRef.current.animateToRegion(
+                {
+                    latitude: provider.latitude,
+                    longitude: provider.longitude,
+                    latitudeDelta: 0.02,
+                    longitudeDelta: 0.02,
+                },
+                500
+            );
+        }
     };
 
     return (
-        <SafeAreaView className="bg-general-500">
-            <FlatList
-                data={recentRides?.slice(0, 5)}
-                renderItem={({ item }) => <RideCard ride={item} />}
-                keyExtractor={(item, index) => index.toString()}
-                className="px-5"
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{
-                    paddingBottom: 100,
+        <SafeAreaView className="flex-1 bg-general-500">
+            {/* HEADER */}
+            <View className="px-5 pt-5">
+                <View className="flex-row items-center justify-between mb-5">
+                    <Text className="text-2xl font-JakartaExtraBold">
+                        Welcome 👋
+                    </Text>
+
+                    <TouchableOpacity className="w-10 h-10 rounded-full bg-white items-center justify-center shadow-sm">
+                        <Image source={icons.out} className="w-4 h-4" />
+                    </TouchableOpacity>
+                </View>
+
+                <GoogleTextInput
+                    icon={icons.search}
+                    containerStyle="bg-white shadow-md rounded-xl"
+                    handlePress={() => {}}
+                />
+            </View>
+
+            {/* MAP */}
+            <View className="flex-1 mt-5">
+                <Maps
+                    ref={mapRef}
+                    providers={providers}
+                    selectedProvider={providers[selectedIndex]}
+                />
+            </View>
+
+            {/* FLOATING CARDS */}
+            <View
+                style={{
+                    position: "absolute",
+                    bottom: tabBarHeight + 15,
                 }}
-                ListEmptyComponent={() => (
-                    <View className="flex flex-col items-center justify-center">
-                        {!loading ? (
-                            <>
-                                <Image
-                                    source={images.noResult}
-                                    className="w-40 h-40"
-                                    alt="No recent rides found"
-                                    resizeMode="contain"
-                                />
-                                <Text className="text-sm">Start using the app for history</Text>
-                            </>
-                        ) : (
-                            <ActivityIndicator size="small" color="#000" />
-                        )}
-                    </View>
-                )}
-                ListHeaderComponent={
-                    <>
-                        <View className="flex flex-row items-center justify-between my-5">
-                            <Text className="text-2xl font-JakartaExtraBold">
-                                Welcome {user?.firstName}👋
-                            </Text>
-                            <TouchableOpacity
-                                onPress={handleSignOut}
-                                className="justify-center items-center w-10 h-10 rounded-full bg-white"
-                            >
-                                <Image source={icons.out} className="w-4 h-4" />
-                            </TouchableOpacity>
-                        </View>
-
-                        <GoogleTextInput
-                            icon={icons.search}
-                            containerStyle="bg-white shadow-md shadow-neutral-300"
-                            handlePress={handleDestinationPress}
+                className="w-full"
+            >
+                {loadingProviders ? (
+                    <ActivityIndicator />
+                ) : providers.length === 0 ? (
+                    <View className="items-center bg-white/90 mx-5 py-6 rounded-2xl">
+                        <Image
+                            source={images.noResult}
+                            className="w-24 h-24"
+                            resizeMode="contain"
                         />
-
-                        <>
-                            <Text className="text-xl font-JakartaBold mt-5 mb-3">
-                                Your current location
-                            </Text>
-                            <View className="flex flex-row items-center bg-transparent h-[300px]">
-
-                            </View>
-                        </>
-
-                        <Text className="text-xl font-JakartaBold mt-5 mb-3">
-                            Recent Services
+                        <Text className="text-gray-500 mt-2">
+                            No nearby services found
                         </Text>
-                    </>
-                }
-            />
+                    </View>
+                ) : (
+                    <FlatList
+                        ref={flatListRef}
+                        data={providers}
+                        horizontal
+                        snapToInterval={CARD_WIDTH}
+                        decelerationRate="fast"
+                        showsHorizontalScrollIndicator={false}
+                        keyExtractor={(item) => item.id}
+                        onMomentumScrollEnd={onScrollEnd}
+                        contentContainerStyle={{
+                            paddingHorizontal: (width - CARD_WIDTH) / 2,
+                        }}
+                        renderItem={({ item, index }) => (
+                            <View style={{ width: CARD_WIDTH }}>
+                                <MechanicCard
+                                    name={item.name}
+                                    type={item.type}
+                                    isSelected={index === selectedIndex}
+                                    onPress={() => {
+                                        flatListRef.current?.scrollToIndex({
+                                            index,
+                                            animated: true,
+                                        });
+                                    }}
+                                />
+                            </View>
+                        )}
+                    />
+                )}
+            </View>
         </SafeAreaView>
     );
 };

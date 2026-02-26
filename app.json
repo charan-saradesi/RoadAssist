@@ -8,11 +8,12 @@
     "scheme": "mymobileapp",
     "userInterfaceStyle": "automatic",
     "extra": {
-      "API_URL": "http://127.0.0.1:8000"
+      "API_URL": "http://192.168.31.106:8000"
     },
     "newArchEnabled": true,
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.anonymous.mymobileAPP"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,7 +23,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "package": "com.anonymous.mymobileAPP"
     },
     "web": {
       "bundler": "metro",
