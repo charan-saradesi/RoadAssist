@@ -8,10 +8,11 @@ const Profile = () => {
     const { user } = useUser();
 
     return (
-        <SafeAreaView className="flex-1">
+        <SafeAreaView className="flex-1 ">
             <ScrollView
                 className="px-5"
-                contentContainerStyle={{ paddingBottom: 120 }}
+                contentContainerStyle={{ paddingBottom: 120 }
+            }
             >
                 <Text className="text-2xl font-JakartaBold my-5">My profile</Text>
 

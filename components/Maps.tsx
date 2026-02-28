@@ -5,9 +5,10 @@ import React, {
     forwardRef,
     useImperativeHandle,
 } from "react";
-import { View, StyleSheet,Image, ActivityIndicator } from "react-native";
+import { View, Text, StyleSheet,Image, ActivityIndicator } from "react-native";
 import MapView, { Marker, Polyline, Region } from "react-native-maps";
 import * as Location from "expo-location";
+
 
 interface Provider {
     id: string;
@@ -29,7 +30,7 @@ const Maps = forwardRef<MapView, MapsProps>(
             providers = [],
             selectedProvider = null,
             routeCoordinates = [],
-        },
+        } ,
         ref
     ) => {
         const internalMapRef = useRef<MapView>(null);
@@ -147,20 +148,21 @@ const Maps = forwardRef<MapView, MapsProps>(
                 showsBuildings={false}        // ✅ hide 3D buildings
                 showsIndoors={false}          // ✅ hide indoor maps
                 showsTraffic={false}          // ✅ hide traffic
-                showsCompass={true}
                 onMapReady={() => console.log("🗺 Map Ready")}
             >
                 {/* USER MARKER */}
                 {location && (
-                    <Marker
+                    <Marker style={{width: 50, height:100, }}
+                            title={"YOU"}
                         coordinate={{
                             latitude: location.coords.latitude,
                             longitude: location.coords.longitude,
                         }}
                     >
+
                         <Image
-                            source={require("../assets/icons/pin_user.png")}
-                            style={{ width: 50, height: 50 }}
+                            source={require("../assets/icons/user_pin.png")}
+                            style={{ width: 50, height: 50 , shadowOpacity: 50}}
                             resizeMode="contain"
                         />
                     </Marker>
@@ -206,7 +208,7 @@ export default Maps;
 const styles = StyleSheet.create({
     map: {
         width: "100%",
-        height: "90%",
+        height: "100%",
     },
     loader: {
         flex: 1,
