@@ -220,7 +220,12 @@ export default function MechanicCard({
 
                                         {!isBusy && (
                                             <TouchableOpacity
-                                                onPress={() => console.log("Book", item.name)}
+                                                onPress={() =>
+                                                    router.push({
+                                                        pathname: "/(root)/booking",
+                                                        params: { provider: JSON.stringify(item) },
+                                                    })
+                                                }
                                                 style={{
                                                     backgroundColor: "#2563eb",
                                                     paddingHorizontal: 20,

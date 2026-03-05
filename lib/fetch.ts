@@ -1,17 +1,22 @@
 import { useState, useEffect, useCallback } from "react";
 
-// 🔹 Replace with your laptop IP when testing on phone
-const API_BASE = "http://172.20.203.102:8000";
+const API_BASE = process.env.EXPO_PUBLIC_API_BASE ?? "http://localhost:8000";
 
-/**
- * Generic API caller
- */
+export class APIError extends Error {
+  status: number;
+  name = "APIError"; // ← add this
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+    Object.setPrototypeOf(this, APIError.prototype); // ← add this
+  }
+}
+
 export const fetchAPI = async <T>(
     path: string,
     options?: RequestInit
 ): Promise<T> => {
   const url = `${API_BASE}${path}`;
-
   console.log("📡 Calling API:", url);
 
   const response = await fetch(url, {
@@ -22,10 +27,7 @@ export const fetchAPI = async <T>(
     ...options,
   });
 
-  // Read response once
   const text = await response.text();
-
-  // Try parsing JSON safely
   let data: any = null;
   try {
     data = text ? JSON.parse(text) : null;
@@ -34,23 +36,19 @@ export const fetchAPI = async <T>(
   }
 
   if (!response.ok) {
-    console.warn("⚠️ API Error:", response.status, data);
-
-    throw new Error(
+    console.warn("⚠️ API Error:", response.status, JSON.stringify(data, null, 2));
+    throw new APIError(
         typeof data === "string"
             ? data
-            : data?.detail || `HTTP ${response.status}`
+            : data?.detail || `HTTP ${response.status}`,
+        response.status
     );
   }
 
   console.log("✅ API Success:", data);
-
   return data as T;
 };
 
-/**
- * React hook for fetching data
- */
 export const useFetch = <T>(
     path: string,
     options?: RequestInit,
@@ -63,7 +61,6 @@ export const useFetch = <T>(
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(null);
-
     try {
       const result = await fetchAPI<T>(path, options);
       setData(result);
@@ -72,11 +69,11 @@ export const useFetch = <T>(
     } finally {
       setLoading(false);
     }
-  }, [path]); // ✅ only depend on path
+  }, [path]);
 
   useEffect(() => {
     if (autoFetch) {
-      fetchData();
+      void fetchData();
     }
   }, [fetchData, autoFetch]);
 

@@ -3,7 +3,9 @@ from typing import Optional, Literal
 from datetime import datetime
 
 class User(BaseModel):
-    name: str
+    firstName: str
+    lastName: str
+    phone: str
     email: EmailStr
     clerkId: str
 
@@ -11,22 +13,24 @@ class LoginUser(BaseModel):
     email: EmailStr
     clerkId: str
 
+from typing import Literal, Optional
+from pydantic import BaseModel, EmailStr
+
 class ProviderCreate(BaseModel):
     name: str
-    service_type: Literal["mechanic", "towing"]
+    service_type: Literal["mechanic", "towing", "both"]  # ← add "both"
     phone: str
     email: EmailStr
     address: str
     latitude: float
     longitude: float
-    rating: float = 0.0
-    total_reviews: int = 0
     experience_years: int = 0
     base_price: int = 0
     description: Optional[str] = None
     image: Optional[str] = None
     verified: bool = False
     availability: Literal["available", "busy"] = "available"
+    clerk_id: Optional[str] = None
 
 class ProviderResponse(BaseModel):
     id: int

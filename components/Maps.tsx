@@ -1,221 +1,188 @@
-import React, {
-    useEffect,
-    useState,
-    useRef,
-    forwardRef,
-    useImperativeHandle,
-} from "react";
-import { View, Text, StyleSheet,Image, ActivityIndicator } from "react-native";
-import MapView, { Marker, Polyline, Region } from "react-native-maps";
-import * as Location from "expo-location";
+import React, { forwardRef, useImperativeHandle, useRef, useEffect } from "react";
+import { Image, StyleSheet, TouchableOpacity, View, Platform } from "react-native";
+import MapView, { Marker, Polyline, PROVIDER_DEFAULT } from "react-native-maps";
+import { Provider } from "@/constants/providers";
 
-
-interface Provider {
-    id: string;
-    name: string;
-    latitude: number;
-    longitude: number;
-    type: string;
+interface RouteInfo {
+    coordinates: { latitude: number; longitude: number }[];
 }
 
-interface MapsProps {
+interface AppMapProps {
     providers?: Provider[];
     selectedProvider?: Provider | null;
-    routeCoordinates?: { latitude: number; longitude: number }[];
+    userLocation?: { latitude: number; longitude: number } | null;
+    routeInfo?: RouteInfo | null;
+    initialRegion?: {
+        latitude: number;
+        longitude: number;
+        latitudeDelta: number;
+        longitudeDelta: number;
+    };
+    style?: any;
 }
 
-const Maps = forwardRef<MapView, MapsProps>(
-    (
-        {
-            providers = [],
-            selectedProvider = null,
-            routeCoordinates = [],
-        } ,
-        ref
-    ) => {
-        const internalMapRef = useRef<MapView>(null);
-        const [location, setLocation] =
-            useState<Location.LocationObject | null>(null);
-        const [loading, setLoading] = useState(true);
+const AppMap = forwardRef<MapView, AppMapProps>(
+    ({ providers = [], selectedProvider, userLocation, routeInfo, initialRegion, style }, ref) => {
 
-        useImperativeHandle(ref, () => internalMapRef.current as MapView);
+        const internalRef = useRef<MapView>(null);
+        useImperativeHandle(ref, () => internalRef.current as MapView);
 
-        /* ============================
-           DEBUG: Providers
-        ============================ */
+        // Auto-zoom to user location when it arrives
         useEffect(() => {
-            console.log("🛠 Providers received:", providers);
-            console.log("🛠 Providers length:", providers.length);
+            if (!userLocation) return;
+            const delay = Platform.OS === "ios" ? 1200 : 800;
+            const timer = setTimeout(() => {
+                internalRef.current?.animateToRegion(
+                    {
+                        latitude: userLocation.latitude,
+                        longitude: userLocation.longitude,
+                        latitudeDelta: 0.05,
+                        longitudeDelta: 0.05,
+                    },
+                    1000
+                );
+            }, delay);
+            return () => clearTimeout(timer);
+        }, [userLocation]);
 
-            if (providers.length > 0) {
-                console.log("🛠 First provider coords:", {
-                    lat: providers[0].latitude,
-                    lng: providers[0].longitude,
-                    latType: typeof providers[0].latitude,
-                    lngType: typeof providers[0].longitude,
-                });
+        const zoomToUser = () => {
+            if (!userLocation) return;
+            internalRef.current?.animateToRegion(
+                {
+                    latitude: userLocation.latitude,
+                    longitude: userLocation.longitude,
+                    latitudeDelta: 0.02,
+                    longitudeDelta: 0.02,
+                },
+                600
+            );
+        };
+
+        const defaultRegion = userLocation
+            ? {
+                latitude: userLocation.latitude,
+                longitude: userLocation.longitude,
+                latitudeDelta: 0.05,
+                longitudeDelta: 0.05,
             }
-        }, [providers]);
-
-        /* ============================
-           GET USER LOCATION
-        ============================ */
-        useEffect(() => {
-            const fetchLocation = async () => {
-                console.log("📍 Requesting permission...");
-
-                const { status } =
-                    await Location.requestForegroundPermissionsAsync();
-
-                console.log("📍 Permission status:", status);
-
-                if (status !== "granted") {
-                    console.log("❌ Location permission denied");
-                    setLoading(false);
-                    return;
-                }
-
-                const currentLocation =
-                    await Location.getCurrentPositionAsync({
-                        accuracy: Location.Accuracy.High,
-                    });
-
-                console.log("📌 User location:", currentLocation.coords);
-
-                setLocation(currentLocation);
-                setLoading(false);
-
-                // wait for map to be ready
-                setTimeout(() => {
-                    if (internalMapRef.current) {
-                        const region: Region = {
-                            latitude: currentLocation.coords.latitude,
-                            longitude: currentLocation.coords.longitude,
-                            latitudeDelta: 0.02,
-                            longitudeDelta: 0.02,
-                        };
-
-                        console.log("🗺 Animating to user region:", region);
-
-                        internalMapRef.current.animateToRegion(region, 1000);
-                    } else {
-                        console.log("❌ Map ref not ready");
-                    }
-                }, 800);
+            : {
+                latitude: 12.9716,
+                longitude: 77.5946,
+                latitudeDelta: 0.1,
+                longitudeDelta: 0.1,
             };
 
-            fetchLocation();
-        }, []);
-
-        /* ============================
-           SELECTED PROVIDER ZOOM
-        ============================ */
-        useEffect(() => {
-            if (selectedProvider && internalMapRef.current) {
-                console.log("🎯 Selected provider changed:", selectedProvider);
-
-                internalMapRef.current.animateToRegion(
-                    {
-                        latitude: selectedProvider.latitude,
-                        longitude: selectedProvider.longitude,
-                        latitudeDelta: 0.01,
-                        longitudeDelta: 0.01,
-                    },
-                    600
-                );
-            }
-        }, [selectedProvider]);
-
-        if (loading) {
-            return (
-                <View style={styles.loader}>
-                    <ActivityIndicator size="large" />
-                </View>
-            );
-        }
-
         return (
-            <MapView
-                ref={internalMapRef}
-                style={styles.map}
-                initialRegion={{
-                    latitude: 20.5937,
-                    longitude: 78.9629,
-                    latitudeDelta: 10,
-                    longitudeDelta: 10,
-                }}
-                showsPointsOfInterest={false} // ✅ hide POIs like restaurants, stores
-                showsBuildings={false}        // ✅ hide 3D buildings
-                showsIndoors={false}          // ✅ hide indoor maps
-                showsTraffic={false}          // ✅ hide traffic
-                onMapReady={() => console.log("🗺 Map Ready")}
-            >
-                {/* USER MARKER */}
-                {location && (
-                    <Marker style={{width: 50, height:100, }}
-                            title={"YOU"}
-                        coordinate={{
-                            latitude: location.coords.latitude,
-                            longitude: location.coords.longitude,
-                        }}
-                    >
+            <View style={style ?? styles.container}>
+                <MapView
+                    ref={internalRef}
+                    style={styles.map}
 
+                    initialRegion={initialRegion ?? defaultRegion}
+                    showsUserLocation={false}
+                    showsMyLocationButton={false}
+                    showsPointsOfInterest={false}
+                    showsBuildings={false}
+                    showsIndoors={false}
+                    showsTraffic={false}
+                    showsCompass={true}
+                >
+                    {userLocation && (
+                        <Marker
+                            coordinate={userLocation}
+                            title="You"
+                            anchor={{ x: 0.5, y: 1 }}
+                        >
+                            <Image
+                                source={require("../assets/icons/user_pin.png")}
+                                style={{ width: 50, height: 50 }}
+                                resizeMode="contain"
+                            />
+                        </Marker>
+                    )}
+
+                    {providers.map((provider) => {
+                        const isSelected = selectedProvider?.id === provider.id;
+                        const pinImage =
+                            provider.type === "towing"
+                                ? require("../assets/icons/tow_pin.png")
+                                : require("../assets/icons/mechanic_pin.png");
+
+                        return (
+                            <Marker
+                                key={provider.id}
+                                coordinate={{
+                                    latitude: provider.latitude,
+                                    longitude: provider.longitude,
+                                }}
+                                title={provider.name}
+                                anchor={{ x: 0.5, y: 1 }}
+                            >
+                                <Image
+                                    source={pinImage}
+                                    style={{
+                                        width: isSelected ? 40 : 40,
+                                        height: isSelected ? 40 : 40,
+                                    }}
+                                    resizeMode="contain"
+                                />
+                            </Marker>
+                        );
+                    })}
+
+                    {routeInfo && routeInfo.coordinates.length > 0 && (
+                        <Polyline
+                            coordinates={routeInfo.coordinates}
+                            strokeColor="#2563eb"
+                            strokeWidth={4}
+                        />
+                    )}
+                </MapView>
+
+                {/* Custom My Location Button — works on both iOS and Android */}
+                {userLocation && (
+                    <TouchableOpacity
+                        onPress={zoomToUser}
+                        style={styles.locationButton}
+                        activeOpacity={0.8}
+                    >
                         <Image
                             source={require("../assets/icons/user_pin.png")}
-                            style={{ width: 50, height: 50 , shadowOpacity: 50}}
+                            style={{ width: 22, height: 22 }}
                             resizeMode="contain"
                         />
-                    </Marker>
+                    </TouchableOpacity>
                 )}
-
-                {/* PROVIDER MARKERS */}
-                {providers.map((provider) => {
-                    const pinImage =
-                        provider.type === "mechanic"
-                            ? require("../assets/icons/mechanic_pin.png")
-                            : provider.type === "towing"
-                                ? require("../assets/icons/tow_pin.png")
-                                : require("../assets/icons/mechanic_pin.png"); // for "both"
-
-                    return (
-                        <Marker
-
-                            key={provider.id}
-                            coordinate={{
-                                latitude: provider.latitude,
-                                longitude: provider.longitude,
-                            }}
-                            image={pinImage}
-                            title={provider.name}
-                        />
-                    );
-                })}
-
-                {routeCoordinates?.length > 0 && (
-                    <Polyline
-                        coordinates={routeCoordinates}
-                        strokeWidth={4}
-                        strokeColor="#0286FF"
-                    />
-                )}
-            </MapView>
+            </View>
         );
     }
 );
 
-export default Maps;
+export default AppMap;
 
 const styles = StyleSheet.create({
+    container: {
+        width: "100%",
+        height: "100%",
+    },
     map: {
         width: "100%",
         height: "100%",
     },
-    loader: {
-        flex: 1,
-        justifyContent: "center",
+    locationButton: {
+        position: "absolute",
+        bottom: 160,
+        right: 16,
+        backgroundColor: "#fff",
+        borderRadius: 999,
+        width: 44,
+        height: 44,
         alignItems: "center",
+        justifyContent: "center",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 6,
+        elevation: 5,
     },
-
-
-
 });
