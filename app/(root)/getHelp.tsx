@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { View, Dimensions, ActivityIndicator, Text, Platform } from "react-native";
+import { View, Dimensions, ActivityIndicator, Text } from "react-native";
 import MapView from "react-native-maps";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as Location from "expo-location";
@@ -7,68 +7,58 @@ import AppMap from "@/components/Maps";
 import MechanicCard from "@/components/MechanicCard";
 import { Provider } from "@/constants/providers";
 import { fetchAPI } from "@/lib/fetch";
-import {useLocalSearchParams} from "expo-router";
+import { useLocalSearchParams } from "expo-router";
 
 const { width } = Dimensions.get("window");
 const CARD_WIDTH = width * 0.78;
 const SPACING = 12;
 
-
-const params = useLocalSearchParams();
-const filter = params.filter as string | undefined;
 const GetHelp = () => {
     const mapRef = useRef<MapView>(null);
     const [providers, setProviders] = useState<Provider[]>([]);
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
-    const { filter } = useLocalSearchParams<{ filter?: string }>();
     const [userLocation, setUserLocation] = useState<{
         latitude: number;
         longitude: number;
     } | null>(null);
 
+    // ✅ Inside component, declared once
+    const { filter } = useLocalSearchParams<{ filter?: string }>();
+
     useEffect(() => {
         void fetchNearbyProviders();
-    }, []);
+    }, [filter]); // ✅ re-fetch when filter changes
 
     const fetchNearbyProviders = async () => {
         console.log("[GetHelp] Filter:", filter);
         setLoading(true);
         setError(null);
         try {
-            console.log("[Location] Checking existing permission...");
             const { status: existing } = await Location.getForegroundPermissionsAsync();
-            console.log("[Location] Existing status:", existing);
-
             const { status } = existing === "granted"
                 ? { status: existing }
                 : await Location.requestForegroundPermissionsAsync();
-            console.log("[Location] Final status:", status);
 
             let path = filter
                 ? `/providers?service_type=${filter}`
                 : "/providers";
 
             if (status === "granted") {
-                console.log("[Location] Getting position...");
                 const location = await Location.getCurrentPositionAsync({
                     accuracy: Location.Accuracy.Balanced,
                 });
-                console.log("[Location] Got position:", location.coords);
-
                 const { latitude, longitude } = location.coords;
                 setUserLocation({ latitude, longitude });
                 path = filter
-                    ? `/providers?lat=${latitude}&lng=${longitude}&radius_km=20&service_type=${filter}`
-                    : `/providers?lat=${latitude}&lng=${longitude}&radius_km=20`;
+                    ? `/providers?lat=${latitude}&lng=${longitude}&radius_km=7&service_type=${filter}`
+                    : `/providers?lat=${latitude}&lng=${longitude}&radius_km=7`;
             } else {
-                console.log("[Location] Permission not granted:", status);
                 setError("Location permission denied. Showing all providers.");
             }
 
             const data = await fetchAPI<any[]>(path);
-            // ... rest of your code
 
             if (data.length === 0) {
                 setError("No providers found nearby.");
@@ -90,7 +80,7 @@ const GetHelp = () => {
                 experienceYears: p.experience_years,
                 basePrice:       p.base_price,
                 description:     p.description ?? "",
-                image:           p.image ?? "",
+                image:           p.image || `https://randomuser.me/api/portraits/men/${p.id % 99}.jpg`,
                 verified:        p.verified,
                 availability:    p.availability,
                 distanceKm:      p.distance_km ?? null,
