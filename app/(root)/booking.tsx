@@ -8,6 +8,8 @@ import MapView from "react-native-maps";
 import * as Location from "expo-location";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import AppMap from "@/components/Maps";
+import { useUser } from "@clerk/clerk-expo";
+import { fetchAPI } from "@/lib/fetch";
 
 const GEOAPIFY_API_KEY = process.env.EXPO_PUBLIC_GEOAPIFY_KEY;
 const { height } = Dimensions.get("window");
@@ -23,6 +25,7 @@ export default function BookingScreen() {
     const item = JSON.parse(provider as string);
     const router = useRouter();
     const mapRef = useRef<MapView>(null);
+    const { user } = useUser();
 
     const providerCoords = useRef({
         latitude: item.latitude,
@@ -33,6 +36,7 @@ export default function BookingScreen() {
     const [routeInfo, setRouteInfo] = useState<RouteInfo | null>(null);
     const [loading, setLoading] = useState(true);
     const [routeLoading, setRouteLoading] = useState(false);
+    const [bookingLoading, setBookingLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [bookingConfirmed, setBookingConfirmed] = useState(false);
 
@@ -57,7 +61,7 @@ export default function BookingScreen() {
 
     useEffect(() => {
         if (!userLocation) return;
-         fetchRoute(userLocation, providerCoords) ;
+        fetchRoute(userLocation, providerCoords);
     }, [userLocation]);
 
     const fetchRoute = async (
@@ -110,6 +114,30 @@ export default function BookingScreen() {
         }
     };
 
+    const handleConfirmBooking = async () => {
+        setBookingLoading(true);
+        try {
+            await fetchAPI("/bookings", {
+                method: "POST",
+                body: JSON.stringify({
+                    user_clerk_id: user?.id,
+                    provider_id: Number(item.id),
+                    user_lat: userLocation?.latitude,
+                    user_lng: userLocation?.longitude,
+                    distance_km: routeInfo?.distanceKm ?? 0,
+                    duration_min: routeInfo?.durationMin ?? 0,
+                    base_price: item.basePrice,
+                    user_address: item.address,
+                }),
+            });
+            setBookingConfirmed(true);
+        } catch (e: any) {
+            setError("Booking failed: " + e.message);
+        } finally {
+            setBookingLoading(false);
+        }
+    };
+
     const initialRegion = userLocation
         ? {
             latitude: (userLocation.latitude + providerCoords.latitude) / 2,
@@ -133,8 +161,8 @@ export default function BookingScreen() {
             <SafeAreaView className="flex-1 bg-green-50 items-center justify-center px-8">
                 <View className="bg-white rounded-3xl p-8 items-center w-full shadow-md">
                     <Text className="text-5xl">🎉</Text>
-                    <Text className="text-xl font-extrabold text-green-800 mt-4">Booking Confirmed!</Text>
-                    <Text className="text-sm text-gray-500 mt-2 text-center">{item.name} is on the way.</Text>
+                    <Text className="text-xl font-extrabold text-green-800 mt-4">Booking Made!</Text>
+                    <Text className="text-sm text-gray-500 mt-2 text-center">{item.name} please waite for conformation.</Text>
                     {routeInfo && (
                         <View className="bg-green-50 rounded-2xl p-4 mt-5 w-full flex-row justify-around">
                             <View className="items-center">
@@ -154,7 +182,7 @@ export default function BookingScreen() {
                         </View>
                     )}
                     <TouchableOpacity
-                        onPress={() => router.push("/(root)/getHelp")}
+                        onPress={() => router.replace("/(root)/(tabs)/services")}
                         className="bg-blue-700 rounded-2xl py-3.5 px-10 mt-6"
                         activeOpacity={0.85}
                     >
@@ -167,9 +195,7 @@ export default function BookingScreen() {
 
     return (
         <SafeAreaView className="flex-1 bg-slate-50">
-
             <View style={{ height: height * 0.55 }}>
-                {/* Same AppMap — routeInfo passed so polyline is shown */}
                 <AppMap
                     ref={mapRef}
                     providers={[item]}
@@ -179,7 +205,6 @@ export default function BookingScreen() {
                     initialRegion={initialRegion}
                     style={{ flex: 1 }}
                 />
-
                 <TouchableOpacity
                     onPress={() => router.back()}
                     className="absolute left-4 bg-white/95 rounded-full w-10 h-10 items-center justify-center shadow"
@@ -188,7 +213,6 @@ export default function BookingScreen() {
                 >
                     <Text className="text-lg text-blue-700 font-bold">←</Text>
                 </TouchableOpacity>
-
                 {routeLoading && (
                     <View
                         className="absolute right-4 bg-white/95 rounded-xl px-3 py-2 flex-row items-center shadow"
@@ -261,7 +285,8 @@ export default function BookingScreen() {
                 </View>
 
                 <TouchableOpacity
-                    onPress={() => setBookingConfirmed(true)}
+                    onPress={handleConfirmBooking}
+                    disabled={bookingLoading}
                     className="bg-blue-700 rounded-2xl py-4 items-center"
                     style={{
                         shadowColor: "#1d4ed8",
@@ -272,9 +297,12 @@ export default function BookingScreen() {
                     }}
                     activeOpacity={0.85}
                 >
-                    <Text className="text-white text-base font-extrabold">
-                        Confirm Booking · ₹{item.basePrice}
-                    </Text>
+                    {bookingLoading
+                        ? <ActivityIndicator color="#fff" />
+                        : <Text className="text-white text-base font-extrabold">
+                            Confirm Booking · ₹{item.basePrice}
+                        </Text>
+                    }
                 </TouchableOpacity>
             </ScrollView>
         </SafeAreaView>

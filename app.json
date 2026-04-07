@@ -8,7 +8,13 @@
     "scheme": "mymobileapp",
     "userInterfaceStyle": "automatic",
     "extra": {
-      "API_URL": "http://192.168.31.34:8000"
+      "API_URL": "http://192.168.31.34:8000",
+      "router": {
+        "origin": "https://roadassist.com"
+      },
+      "eas": {
+        "projectId": "b3c6432d-b922-43e8-9acb-8ca395f54a5e"
+      }
     },
     "newArchEnabled": true,
     "ios": {
@@ -32,7 +38,9 @@
       "package": "com.anonymous.mymobileAPP",
       "permissions": [
         "ACCESS_FINE_LOCATION",
-        "ACCESS_COARSE_LOCATION"
+        "ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -71,6 +79,7 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "owner": "charanvip"
   }
 }

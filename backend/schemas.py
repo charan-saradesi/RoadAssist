@@ -54,3 +54,26 @@ class ProviderResponse(BaseModel):
 
 class AvailabilityUpdate(BaseModel):
     availability: Literal["available", "busy"]
+
+
+class BookingCreate(BaseModel):
+    user_clerk_id: str
+    provider_id: int
+    user_lat: float
+    user_lng: float
+    distance_km: float
+    duration_min: int
+    base_price: int
+    user_address: str
+
+class PushTokenUpdate(BaseModel):
+    clerk_id: str
+    token: str
+
+
+class BookingStatusUpdate(BaseModel):
+    status: Literal["accepted", "rejected", "completed"]
+
+class LocationUpdate(BaseModel):
+    lat: float
+    lng: float

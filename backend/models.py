@@ -4,6 +4,24 @@ from database import get_connection
 from schemas import ProviderCreate
 import math
 
+import httpx
+
+def send_push_notification(token: str, title: str, body: str) -> None:
+    if not token:
+        return
+    try:
+        httpx.post(
+            "https://exp.host/--/api/v2/push/send",
+            json={
+                "to": token,
+                "title": title,
+                "body": body,
+                "sound": "default",
+            },
+            timeout=5,
+        )
+    except Exception as e:
+        print(f"Push notification failed: {e}")
 
 def haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     R = 6371
@@ -214,6 +232,247 @@ def fetch_provider_by_clerk_id(clerk_id: str) -> dict:
             "name": row[1],
             "service_type": row[2],
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def create_booking(user_clerk_id: str, provider_id: int, user_lat: float, user_lng: float, distance_km: float, duration_min: int, base_price: int, user_address: str) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        # Get user_id and user push token
+        cursor.execute("SELECT id, name, expo_push_token FROM users WHERE clerk_id=%s", (user_clerk_id,))
+        user_row = cursor.fetchone()
+        if not user_row:
+            raise HTTPException(status_code=404, detail="User not found")
+        user_id, user_name, user_push_token = user_row
+
+        # Get provider push token
+        cursor.execute("SELECT expo_push_token FROM providers WHERE id=%s", (provider_id,))
+        provider_row = cursor.fetchone()
+        if not provider_row:
+            raise HTTPException(status_code=404, detail="Provider not found")
+        provider_push_token = provider_row[0]
+
+        # Insert into service_requests
+        cursor.execute("""
+            INSERT INTO service_requests 
+                (user_id, provider_id, user_lat, user_lng, distance_km, duration_min, base_price, user_address, status)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'pending')
+            RETURNING id;
+        """, (user_id, provider_id, user_lat, user_lng, distance_km, duration_min, base_price, user_address))
+
+        booking_id = cursor.fetchone()[0]
+        conn.commit()
+
+        # Send push to provider
+        send_push_notification(
+            provider_push_token,
+            "🔧 New Booking Request!",
+            f"{user_name} has requested your service. Tap to respond."
+        )
+
+        # Send push to user
+        send_push_notification(
+            user_push_token,
+            "✅ Booking Confirmed!",
+            "Your booking request has been sent. Waiting for provider to accept."
+        )
+
+        return {"success": True, "booking_id": booking_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+def save_user_push_token(clerk_id: str, token: str) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE users SET expo_push_token=%s WHERE clerk_id=%s RETURNING id;",
+            (token, clerk_id)
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="User not found")
+        conn.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def save_provider_push_token(clerk_id: str, token: str) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute(
+            "UPDATE providers SET expo_push_token=%s WHERE clerk_id=%s RETURNING id;",
+            (token, clerk_id)
+        )
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Provider not found")
+        conn.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+def get_bookings_for_user(clerk_id: str) -> list:
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT sr.id, sr.status, sr.created_at, sr.base_price,
+                   sr.distance_km, sr.duration_min, sr.user_address,
+                   p.name as provider_name, p.phone as provider_phone,
+                   p.service_type, p.image as provider_image
+            FROM service_requests sr
+            JOIN providers p ON sr.provider_id = p.id
+            JOIN users u ON sr.user_id = u.id
+            WHERE u.clerk_id = %s
+            ORDER BY sr.created_at DESC;
+        """, (clerk_id,))
+        rows = cursor.fetchall()
+        return [
+            {
+                "id": row[0], "status": row[1], "created_at": str(row[2]),
+                "base_price": float(row[3]), "distance_km": float(row[4]),
+                "duration_min": row[5], "user_address": row[6],
+                "provider_name": row[7], "provider_phone": row[8],
+                "service_type": row[9], "provider_image": row[10],
+            }
+            for row in rows
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_bookings_for_provider(clerk_id: str) -> list:
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+                       SELECT sr.id,
+                              sr.status,
+                              sr.created_at,
+                              sr.base_price,
+                              sr.distance_km,
+                              sr.duration_min,
+                              sr.user_address,
+                              u.name  as user_name,
+                              u.phone as user_phone,
+                              sr.user_lat,
+                              sr.user_lng
+                       FROM service_requests sr
+                                JOIN providers p ON sr.provider_id = p.id
+                                JOIN users u ON sr.user_id = u.id
+                       WHERE p.clerk_id = %s
+                       ORDER BY sr.created_at DESC;
+                       """, (clerk_id,))
+        rows = cursor.fetchall()
+        return [
+            {
+                "id": row[0], "status": row[1], "created_at": str(row[2]),
+                "base_price": float(row[3]), "distance_km": float(row[4]),
+                "duration_min": row[5], "user_address": row[6],
+                "user_name": row[7], "user_phone": row[8],
+                "user_lat": float(row[9]) if row[9] else None,
+                "user_lng": float(row[10]) if row[10] else None,
+            }
+            for row in rows
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def update_booking_status(booking_id: int, status: str) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE service_requests 
+            SET status=%s, updated_at=now() 
+            WHERE id=%s RETURNING id;
+        """, (status, booking_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Booking not found")
+        conn.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def update_provider_location(booking_id: int, lat: float, lng: float) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            UPDATE service_requests 
+            SET provider_lat=%s, provider_lng=%s, updated_at=now()
+            WHERE id=%s RETURNING id;
+        """, (lat, lng, booking_id))
+        if not cursor.fetchone():
+            raise HTTPException(status_code=404, detail="Booking not found")
+        conn.commit()
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        cursor.close()
+        conn.close()
+
+
+def get_booking_location(booking_id: int) -> dict:
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+            SELECT provider_lat, provider_lng, status
+            FROM service_requests WHERE id=%s;
+        """, (booking_id,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Booking not found")
+        return {
+            "provider_lat": float(row[0]) if row[0] is not None else None,
+            "provider_lng": float(row[1]) if row[1] is not None else None,
+            "status": row[2],
+        }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
